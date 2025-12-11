@@ -1,0 +1,260 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <conio.h>    // for getch() — real-time key capture
+#include <ctype.h>    // for tolower()
+
+// Structure for player data
+struct Player {
+    char name[50];
+    double wpm;
+    double accuracy;
+};
+
+// Function declarations
+void getRandomSentence(char sentence[]);
+void getRandomParagraph(char paragraph[]);
+void startTypingTest(char name[]);
+void saveResult(struct Player p);
+void showLeaderboard();
+double calculateAccuracy(char *original, char *typed);
+double calculateWPM(char *typed, double timeTaken);
+void typingWithCorrection(char *original, char *typed, int limit);
+
+// ----------------------------- MAIN FUNCTION -----------------------------
+int main() {
+    int choice;
+    char name[50];
+
+    printf("=========================================\n");
+    printf("      TYPING SPEED TEST GAME (C Project)\n");
+    printf("=========================================\n\n");
+
+    printf("Enter your name: ");
+    fgets(name, sizeof(name), stdin);
+    name[strcspn(name, "\n")] = '\0';
+
+    while (1) {
+        printf("\n------------- MAIN MENU -------------\n");
+        printf("1) Start Typing Test\n");
+        printf("2) View Leaderboard\n");
+        printf("3) Exit\n");
+        printf("------------------------------------\n");
+        printf("Enter your choice: ");
+        scanf("%d", &choice);
+        getchar(); // clear input buffer
+
+        switch (choice) {
+            case 1:
+                startTypingTest(name);
+                break;
+            case 2:
+                showLeaderboard();
+                break;
+            case 3:
+                printf("\nThank you for playing, %s! Keep practicing!\n", name);
+                exit(0);
+            default:
+                printf("Invalid choice! Try again.\n");
+        }
+    }
+    return 0;
+}
+
+// ------------------- Load Random Sentence (1-minute test) -------------------
+void getRandomSentence(char sentence[]) {
+    FILE *fp = fopen("sentences.txt", "r");
+    if (!fp) {
+        printf("Error: Could not open sentences.txt\n");
+        exit(1);
+    }
+
+    char lines[50][300];
+    int count = 0;
+    while (fgets(lines[count], sizeof(lines[count]), fp)) {
+        lines[count][strcspn(lines[count], "\n")] = '\0';
+        count++;
+    }
+    fclose(fp);
+
+    srand(time(0));
+    int randomIndex = rand() % count;
+    strcpy(sentence, lines[randomIndex]);
+}
+
+// ------------------- Load Random Paragraph (2-minute test) -------------------
+void getRandomParagraph(char paragraph[]) {
+    FILE *fp = fopen("paragraphs.txt", "r");
+    if (!fp) {
+        printf("Error: Could not open paragraphs.txt\n");
+        exit(1);
+    }
+
+    char temp[1000], paras[20][1000] = {0};
+    int count = 0;
+
+    while (fgets(temp, sizeof(temp), fp)) {
+        if (strcmp(temp, "\n") == 0 || strcmp(temp, "\r\n") == 0)
+            count++;
+        else
+            strcat(paras[count], temp);
+    }
+    fclose(fp);
+
+    srand(time(0));
+    int randomIndex = rand() % (count + 1);
+    strcpy(paragraph, paras[randomIndex]);
+}
+
+// ------------------- Start Typing Test -------------------
+void startTypingTest(char name[]) {
+    int typeChoice;
+    char text[1500], typed[2000];
+    int limit;
+    time_t start, current;
+    struct Player player;
+
+    printf("\nChoose test type:\n");
+    printf("1) Quick Test (1 minute, short lines)\n");
+    printf("2) Paragraph Test (2 minutes)\n");
+    printf("Enter choice: ");
+    scanf("%d", &typeChoice);
+    getchar(); // clear buffer
+
+    if (typeChoice == 1) {
+        getRandomSentence(text);
+        limit = 60;
+    } else if (typeChoice == 2) {
+        getRandomParagraph(text);
+        limit = 120;
+    } else {
+        printf("Invalid choice.\n");
+        return;
+    }
+
+    printf("\nType the following text:\n%s\n", text);
+    printf("\n⏱ You have %d seconds. Start typing below:\n", limit);
+
+    time(&start);
+    typingWithCorrection(text, typed, limit);
+    time(&current);
+
+    double timeTaken = difftime(current, start);
+    player.wpm = calculateWPM(typed, timeTaken);
+    player.accuracy = calculateAccuracy(text, typed);
+    strcpy(player.name, name);
+
+    printf("\n\n-------- RESULTS --------\n");
+    printf("Player: %s\n", player.name);
+    printf("Time Taken: %.2f seconds\n", timeTaken);
+    printf("Typing Speed: %.2f WPM\n", player.wpm);
+    printf("Accuracy: %.2f%%\n", player.accuracy);
+    printf("--------------------------\n");
+
+    saveResult(player);
+}
+
+// ------------------- Real-time Typing with Forced Correction -------------------
+void typingWithCorrection(char *original, char *typed, int limit) {
+    int len = strlen(original);
+    int i = 0;
+    char c;
+    time_t start, current;
+    time(&start);
+
+    while (1) {
+        time(&current);
+        if (difftime(current, start) >= limit) {
+            printf("\n\n⏰ Time's up!\n");
+            break;
+        }
+
+        c = getch();
+
+        // Stop when Enter pressed
+        if (c == '\r') break;
+
+        // Handle Backspace
+        if (c == '\b') {
+            if (i > 0) {
+                printf("\b \b");
+                i--;
+            }
+            continue;
+        }
+
+        // Correct character
+        if (tolower(c) == tolower(original[i])) {
+            printf("\033[32m%c\033[0m", c); // Green
+            typed[i++] = c;
+        } else {
+            // Wrong character - show red and block
+            printf("\033[31m%c\033[0m", c);
+            while (1) {
+                char fix = getch();
+                if (fix == '\b' && i > 0) {
+                    printf("\b \b");
+                    i--;
+                    break;
+                }
+            }
+        }
+
+        if (i >= len) break;
+    }
+    typed[i] = '\0';
+}
+
+// ------------------- Calculate Accuracy (Character-based) -------------------
+double calculateAccuracy(char *original, char *typed) {
+    int correct = 0;
+    int total = strlen(original);
+    int minLen = strlen(typed) < total ? strlen(typed) : total;
+
+    for (int i = 0; i < minLen; i++) {
+        if (tolower(original[i]) == tolower(typed[i]))
+            correct++;
+    }
+    return ((double)correct / total) * 100;
+}
+
+// ------------------- Calculate Words Per Minute -------------------
+double calculateWPM(char *typed, double timeTaken) {
+    int words = 0;
+    for (int i = 0; typed[i]; i++)
+        if (typed[i] == ' ' || typed[i] == '\n')
+            words++;
+
+    double minutes = timeTaken / 60.0;
+    if (minutes == 0) minutes = 1;
+    return words / minutes;
+}
+
+// ------------------- Save Player Results -------------------
+void saveResult(struct Player p) {
+    FILE *fp = fopen("results.txt", "a");
+    if (!fp) {
+        printf("Error: Could not open results.txt\n");
+        return;
+    }
+    fprintf(fp, "%s\t%.2f WPM\t%.2f%% Accuracy\n", p.name, p.wpm, p.accuracy);
+    fclose(fp);
+    printf("\nResult saved to results.txt ✅\n");
+}
+
+// ------------------- Display Leaderboard -------------------
+void showLeaderboard() {
+    FILE *fp = fopen("results.txt", "r");
+    if (!fp) {
+        printf("\nNo previous records found.\n");
+        return;
+    }
+
+    char line[200];
+    printf("\n=========== LEADERBOARD ===========\n");
+    while (fgets(line, sizeof(line), fp))
+        printf("%s", line);
+    printf("===================================\n");
+    fclose(fp);
+}
